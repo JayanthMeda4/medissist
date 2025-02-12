@@ -1,24 +1,19 @@
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
-from llama_index.core import Settings
-from dotenv import load_dotenv
 from db_utils import *
-from llama_index.core import SimpleDirectoryReader, VectorStoreIndex, SummaryIndex, DocumentSummaryIndex, \
-    get_response_synthesizer
+from llama_index.core import SimpleDirectoryReader, VectorStoreIndex
 from llama_index.vector_stores.qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 from datetime import datetime
 from qdrant_client.models import Distance, VectorParams
 from llama_index.core.node_parser import SentenceSplitter
-from llama_index.core.memory import ChatMemoryBuffer
-from llama_index.core.chat_engine.types import ChatMode
-from llama_index.core import load_index_from_storage, StorageContext
-from llama_index.core import PromptTemplate, Response
+from llama_index.core import StorageContext
 from pathlib import Path
 from llama_index.core import SummaryIndex, Document
 from llama_index.core.prompts import PromptTemplate
 
 load_dotenv()
+
 embed_model = OpenAIEmbedding(model="text-embedding-3-small")
 llm = OpenAI(model="o1-mini")
 
@@ -92,7 +87,7 @@ class MedQueryRag:
 
     @classmethod
     def get_metadata(cls, pid):
-        data = db_fetch("patient_records", fetch_list_ids="visit_count",
+        data = db_fetch("userdata", fetch_list_ids="visit_count",
                         where={"pid": pid}, db=db_connect(), output_as_dict=True, close_conn=True)
         return data
 
