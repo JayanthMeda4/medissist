@@ -1,0 +1,5 @@
+llama_index
+PyMySQL
+python-dotenv
+qdrant_client
+streamlit
