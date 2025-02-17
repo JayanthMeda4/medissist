@@ -8,7 +8,7 @@ def db_connect():
     try:
         db = pymysql.connect(host=os.getenv("DB_HOSTNAME"), user=os.getenv("DB_USER"),
                              password=os.getenv("DB_PASSWORD"),
-                             database=os.getenv("DB_NAME"))
+                             database=os.getenv("DB_NAME"), connect_timeout=30)
         return db
     except Exception as e:
         print('the error in db_conn------>', e)

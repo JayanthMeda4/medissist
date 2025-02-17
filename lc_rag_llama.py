@@ -37,8 +37,8 @@ class MedQueryRag:
         self.pid = pid
         self.new_convo = new_convo
         self.return_only_boolean = return_only_boolean
-        self.doctor_name = doctor_name
-        self.patient_name = patient_name
+        # self.doctor_name = doctor_name
+        # self.patient_name = patient_name
         self.filename = file_name
         self.visit_number = visit_number
         self.embed_model = OpenAIEmbedding(model="text-embedding-3-small", dimensions=1536)
@@ -46,8 +46,8 @@ class MedQueryRag:
     def return_documents(self):
         reader = SimpleDirectoryReader(input_files=[str(self.filename)])
         docs = reader.load_data()
-        docs[0].metadata = {"visit_number": self.visit_number, "doctor_name": self.doctor_name,
-                            "create_datetime": str(datetime.now()), "patient_name": self.patient_name}
+        docs[0].metadata = {"visit_number": self.visit_number,
+                            "create_datetime": str(datetime.now())}
         text_splitter = SentenceSplitter(
             chunk_size=500,
             chunk_overlap=100,
@@ -65,7 +65,6 @@ class MedQueryRag:
                 vectors_config=VectorParams(size=1536, distance=Distance.COSINE),
             )
         qdrant_vector_store = QdrantVectorStore(client=qc, collection_name=self.pid)
-        print("vector store first index creation")
         storage_context = StorageContext.from_defaults(vector_store=qdrant_vector_store)
         index = VectorStoreIndex.from_documents(documents=docs, transformations=[text_splitter],
                                                 storage_context=storage_context)
@@ -87,7 +86,7 @@ class MedQueryRag:
 
     @classmethod
     def get_metadata(cls, pid):
-        data = db_fetch("userdata", fetch_list_ids="visit_count",
+        data = db_fetch("medissist", fetch_list_ids="visit_count",
                         where={"pid": pid}, db=db_connect(), output_as_dict=True, close_conn=True)
         return data
 
@@ -155,74 +154,3 @@ class MedQueryRag:
         )
 
         return soap_query_engine
-
-    # @classmethod
-    # def create_soap_query_engine(cls,patient_dir):
-    #     """
-    #     Creates a query engine for generating SOAP notes from a patient's visit files.
-    #
-    #     Args:
-    #         patient_dir (str): Path to the patient's directory containing visit files.
-    #
-    #     Returns:
-    #         QueryEngine: A query engine configured to generate SOAP notes.
-    #     """
-    #
-    #     def load_visit_docs(patient_path):
-    #         docs = []
-    #         for visit_file in patient_path.glob("visit_*.txt"):
-    #             # Extract visit number from filename
-    #             visit_num = int(visit_file.stem.split("_")[1])
-    #
-    #             with open(visit_file, "r") as f:
-    #                 content = f.read()
-    #
-    #             # Create document with metadata
-    #             metadata = {
-    #                 "patient_name": patient_path.name,
-    #                 "visit_number": visit_num,
-    #                 "category": "medical_visit"
-    #             }
-    #
-    #             docs.append(Document(
-    #                 text=content,
-    #                 metadata=metadata
-    #             ))
-    #
-    #         return docs
-    #
-    #     # Create custom prompt template
-    #     soap_prompt_template = PromptTemplate(
-    #         "Combine all medical visits to create comprehensive SOAP notes. "
-    #         "Include details about:\n"
-    #         "- Patient's reported symptoms (Subjective)\n"
-    #         "- Clinical findings and tests (Objective)\n"
-    #         "- Diagnoses and progress (Assessment)\n"
-    #         "- Treatment plans and medications (Plan)\n"
-    #         "Maintain chronological order of visits where relevant.\n"
-    #         "Patient Name: {patient_name}\n\n"
-    #         "Context:\n{context_str}\n\n"
-    #         "SOAP Notes:"
-    #     )
-    #
-    #     # Load documents
-    #     patient_path = Path(patient_dir)
-    #     documents = load_visit_docs(patient_path)
-    #
-    #     # Create summary index
-    #     index = SummaryIndex.from_documents(documents)
-    #
-    #     # Create query engine with custom prompt
-    #     soap_query_engine = index.as_query_engine(
-    #         llm=OpenAI(model="gpt-4o-mini",temperature=0),
-    #         response_mode="tree_summarize",
-    #         summary_template=soap_prompt_template,
-    #         streaming=True
-    #     )
-    #
-    #     return soap_query_engine
-
-
-# ce = MedQueryRag.get_query_engine(pid="48001")
-# response = ce.query("what is the capital city of US?")
-# response.print_response_stream()
