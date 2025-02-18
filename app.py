@@ -1,9 +1,17 @@
 import time
 import streamlit as st
 from db_utils import *
-import os, re
+import os
+import re
 from pathlib import Path
 from lc_rag_llama import MedQueryRag
+
+from deepgram import (
+    DeepgramClient,
+    PrerecordedOptions,
+    FileSource,
+)
+import httpx
 
 # Initialize session state variables
 if "user_verified" not in st.session_state:
@@ -31,13 +39,11 @@ if "mabutton" not in st.session_state:
 
 
 def radio_on_change():
-    # print("inside user")
-    st.session_state.is_doactor = False
+    st.session_state.is_doctor = False
     st.session_state.is_patient = False
     st.session_state.soap_engine = None
     st.session_state.chat_engine = None
     st.session_state.messages = []
-    # st.session_state.current_choice = choice
 
 
 def is_valid_email(email):
@@ -49,7 +55,7 @@ st.set_page_config(page_title="MEDISSIST", layout="wide", initial_sidebar_state=
 st.title("MEDISSIST: *Delivering Answers from Patient-Doctor Conversations*")
 
 with st.sidebar:
-    choice = st.radio("User Type", ["Medical Assistant", "Patient", "Doctor"], on_change=radio_on_change)
+    choice = st.radio("User Type", ["Medical Assistant", "Patient", "Doctor", "Transcribe"], on_change=radio_on_change)
     if choice == "Medical Assistant":
         medical_assistant_id = st.text_input(label="**ID**")
         password = st.text_input(label="**Password**", type="password")
@@ -69,12 +75,12 @@ with st.sidebar:
                                  db=db_connect(), output_as_dict=True, close_conn=True)
                 st.write(f"**PatientID: {st.session_state.pid}**")
 
-                # patient_name = st.text_input(label="Patient Name", value=pdata[0].get('pname'))
-                # if patient_name != pdata[0].get('pname'):
-                #     num_affected = db_update("medissist", column_dict={"pname": patient_name},
-                #               where={"pid": pdata[0].get('pid')}, db=db_connect(),close_conn=True)
-                #     if num_affected == 1:
-                #         st.success("Updated Name Successfully")
+                patient_name = st.text_input(label="Patient Name", value=pdata[0].get('pname'))
+                if patient_name != pdata[0].get('pname'):
+                    num_affected = db_update("medissist", column_dict={"pname": patient_name},
+                              where={"pid": pdata[0].get('pid')}, db=db_connect(),close_conn=True)
+                    if num_affected == 1:
+                        st.success("Updated Name Successfully")
                 uploaded_data = st.file_uploader(label="**Upload Conversation Text File**",
                                                  type=[".txt"], accept_multiple_files=False,
                                                  help="Upload Only Text files")
@@ -139,9 +145,74 @@ with st.sidebar:
             else:
                 st.session_state.user_verified = False
                 st.error(f"Invalid Patient ID")
+    elif choice == "Transcribe":
+        medical_assistant_id = st.text_input("Medical Assistant ID")
 
-# print(st.session_state.current_choice, choice, st.session_state.is_doctor, st.session_state.user_verified,
-#       st.session_state.soap_engine, st.session_state.chat_engine)
+        file_name = st.text_input("File Name")
+        st.caption("Enter a name for your transcription file. "
+                   "Your transcribed text will be saved with this name as a .txt file.")
+        if medical_assistant_id and file_name:
+            new_data = db_fetch("medical_assistant", fetch_list_ids="*",
+                                where={"medical_assistant_id": medical_assistant_id},
+                                db=db_connect(),
+                                output_as_dict=True, close_conn=True)
+
+            if new_data:
+                uploaded_data = st.file_uploader(label="**Upload Conversation Text File**",
+                                                 type=[".mp4"], accept_multiple_files=False,
+                                                 help="Upload Only Text files")
+
+                if uploaded_data:
+                    with st.spinner("Transcribing your Audio..."):
+                        buffer_data = uploaded_data.read()
+                        try:
+                            deepgram: DeepgramClient = DeepgramClient(api_key=os.getenv('DEEPGRAM_API_KEY'))
+
+                            payload: FileSource = {
+                                "buffer": buffer_data,
+                            }
+
+                            options: PrerecordedOptions = PrerecordedOptions(
+                                model="nova-3",
+                                diarize=True,
+                            )
+
+                            response = deepgram.listen.rest.v("1").transcribe_file(
+                                payload, options, timeout=httpx.Timeout(300.0, connect=10.0)
+                            )
+
+                            words = response['results']['channels'][0]['alternatives'][0]['words']
+
+                            # Initialize variables to store the transcription
+                            transcription = []
+                            current_speaker = None
+                            current_line = []
+
+                            # Iterate through the words and group them by speaker
+                            for word_info in words:
+                                word = word_info['word']
+                                speaker = word_info['speaker']
+
+                                # If the speaker changes, append the previous line to the transcription
+                                if speaker != current_speaker:
+                                    if current_line:
+                                        transcription.append(f"Speaker {current_speaker}: {' '.join(current_line)}")
+                                        current_line = []
+                                    current_speaker = speaker
+
+                                # Add the word to the current line
+                                current_line.append(word)
+
+                            # Append the last line if there's any remaining content
+                            if current_line:
+                                transcription.append(f"Speaker {current_speaker}: {' '.join(current_line)}")
+
+                            # Join the transcription into a single string with newlines
+                            final_transcription = "\n\n".join(transcription)
+                            st.download_button(label="Download Transcription", data=str(final_transcription),
+                                               file_name=file_name)
+                        except Exception as e:
+                            print(f"Exception: {e}")
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
@@ -165,7 +236,6 @@ if st.session_state.user_verified and st.session_state.is_patient:
         response_placeholder.markdown(full_response)
         st.session_state.messages.append({"role": "assistant", "content": full_response})
 elif st.session_state.is_doctor and st.session_state.user_verified:
-    # print("Inside doc")
     with st.spinner("Generating Response"):
         st.session_state.soap_engine = MedQueryRag.create_soap_query_engine(
             patient_dir=st.session_state.patient_directory
@@ -186,6 +256,5 @@ elif st.session_state.is_doctor and st.session_state.user_verified:
     response_placeholder.markdown(full_response)
     st.session_state.is_doctor = False
 else:
-    # print("inside else")
     prompt = st.chat_input("Say Something", disabled=st.session_state.chat_input)
     st.warning("Patient ID not verified, Please verify Patient ID")
