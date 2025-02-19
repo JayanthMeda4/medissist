@@ -52,7 +52,7 @@ class MedQueryRag:
             chunk_size=500,
             chunk_overlap=100,
             separator=" ",
-            secondary_chunking_regex=r'\n(?=[^:]+:\s*)'
+            # secondary_chunking_regex=r'\n(?=[^:]+:\s*)'
         )
         return docs, text_splitter
 
