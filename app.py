@@ -36,6 +36,14 @@ if "current_choice" not in st.session_state:
     st.session_state.current_choice = None
 if "mabutton" not in st.session_state:
     st.session_state.mabutton = False
+if "transcription_done" not in st.session_state:
+    st.session_state.transcription_done = False
+if "transcription_result" not in st.session_state:
+    st.session_state.transcription_result = None
+if "uploaded_file_name" not in st.session_state:
+    st.session_state.uploaded_file_name = None
+if "transcribe_uploader" not in st.session_state:
+    st.session_state.transcribe_uploader = None
 
 
 def radio_on_change():
@@ -78,7 +86,7 @@ with st.sidebar:
                 patient_name = st.text_input(label="Patient Name", value=pdata[0].get('pname'))
                 if patient_name != pdata[0].get('pname'):
                     num_affected = db_update("medissist", column_dict={"pname": patient_name},
-                              where={"pid": pdata[0].get('pid')}, db=db_connect(),close_conn=True)
+                                             where={"pid": pdata[0].get('pid')}, db=db_connect(), close_conn=True)
                     if num_affected == 1:
                         st.success("Updated Name Successfully")
                 uploaded_data = st.file_uploader(label="**Upload Conversation Text File**",
@@ -147,80 +155,85 @@ with st.sidebar:
                 st.error(f"Invalid Patient ID")
     elif choice == "Transcribe":
         medical_assistant_id = st.text_input("Medical Assistant ID")
-
         file_name = st.text_input("File Name")
         st.caption("Enter a name for your transcription file. "
                    "Your transcribed text will be saved with this name as a .txt file.")
-        print(medical_assistant_id, file_name)
+
         if medical_assistant_id and file_name:
-            print("inside")
+            file_name = re.sub(r"[^\w\-]", "_", file_name).strip("_-")
+            file_name = os.path.splitext(file_name)[0] + ".txt"
+
             new_data = db_fetch("medical_assistant", fetch_list_ids="*",
                                 where={"medical_assistant_id": medical_assistant_id},
                                 db=db_connect(),
                                 output_as_dict=True, close_conn=True)
-            print(new_data)
 
             if new_data:
-                uploaded_data = st.file_uploader(label="**Upload Conversation Text File**",
-                                                 type=["mp3", "wav", "aac", "flac", "m4a", "ogg"],
-                                                 accept_multiple_files=False,
-                                                 help="Upload Only Text files")
+                # Add a unique key to the file uploader using a counter
+                if "uploader_key" not in st.session_state:
+                    st.session_state.uploader_key = 0
 
-                if uploaded_data:
-                    with st.spinner("Transcribing your Audio..."):
-                        buffer_data = uploaded_data.read()
-                        try:
-                            deepgram: DeepgramClient = DeepgramClient(api_key=os.getenv('DEEPGRAM_API_KEY'))
+                uploaded_data = st.file_uploader(
+                    label="**Upload Conversation Text File**",
+                    type=["mp3", "wav", "aac", "flac", "m4a", "ogg"],
+                    accept_multiple_files=False,
+                    key=f"uploader_{st.session_state.uploader_key}"  # Unique key based on counter
+                )
 
-                            payload: FileSource = {
-                                "buffer": buffer_data,
-                            }
+                if uploaded_data and not st.session_state.transcription_done:
+                    if st.session_state.uploaded_file_name != uploaded_data.name:
+                        with st.spinner("Transcribing your Audio..."):
+                            buffer_data = uploaded_data.read()
+                            try:
+                                deepgram: DeepgramClient = DeepgramClient(api_key=os.getenv('DEEPGRAM_API_KEY'))
+                                payload: FileSource = {"buffer": buffer_data}
+                                options: PrerecordedOptions = PrerecordedOptions(model="nova-3", diarize=True)
 
-                            options: PrerecordedOptions = PrerecordedOptions(
-                                model="nova-3",
-                                diarize=True,
-                            )
+                                response = deepgram.listen.rest.v("1").transcribe_file(
+                                    payload, options, timeout=httpx.Timeout(300.0, connect=10.0)
+                                )
 
-                            response = deepgram.listen.rest.v("1").transcribe_file(
-                                payload, options, timeout=httpx.Timeout(300.0, connect=10.0)
-                            )
+                                words = response['results']['channels'][0]['alternatives'][0]['words']
+                                transcription = []
+                                current_speaker = None
+                                current_line = []
 
-                            words = response['results']['channels'][0]['alternatives'][0]['words']
+                                for word_info in words:
+                                    word = word_info['word']
+                                    speaker = word_info['speaker']
+                                    if speaker != current_speaker:
+                                        if current_line:
+                                            transcription.append(f"Speaker {current_speaker}: {' '.join(current_line)}")
+                                            current_line = []
+                                        current_speaker = speaker
+                                    current_line.append(word)
 
-                            # Initialize variables to store the transcription
-                            transcription = []
-                            current_speaker = None
-                            current_line = []
+                                if current_line:
+                                    transcription.append(f"Speaker {current_speaker}: {' '.join(current_line)}")
 
-                            # Iterate through the words and group them by speaker
-                            for word_info in words:
-                                word = word_info['word']
-                                speaker = word_info['speaker']
+                                st.session_state.transcription_result = "\n\n".join(transcription)
+                                st.session_state.uploaded_file_name = uploaded_data.name
+                                st.session_state.transcription_done = True
 
-                                # If the speaker changes, append the previous line to the transcription
-                                if speaker != current_speaker:
-                                    if current_line:
-                                        transcription.append(f"Speaker {current_speaker}: {' '.join(current_line)}")
-                                        current_line = []
-                                    current_speaker = speaker
+                            except Exception as e:
+                                print(f"Exception: {e}")
 
-                                # Add the word to the current line
-                                current_line.append(word)
+                if st.session_state.transcription_result:
+                    # Add the download button with reset logic
+                    if st.download_button(
+                            label="Download Transcription",
+                            data=st.session_state.transcription_result,
+                            file_name=file_name
+                    ):
+                        # Reset state to allow new uploads
+                        st.session_state.uploader_key += 1  # Change uploader key
+                        st.session_state.transcription_done = False
+                        st.session_state.transcription_result = None
+                        st.session_state.uploaded_file_name = None
+                        st.rerun()  # Force refresh to clear the uploader
 
-                            # Append the last line if there's any remaining content
-                            if current_line:
-                                transcription.append(f"Speaker {current_speaker}: {' '.join(current_line)}")
-
-                            # Join the transcription into a single string with newlines
-                            final_transcription = "\n\n".join(transcription)
-                            st.download_button(label="Download Transcription", data=str(final_transcription),
-                                               file_name=file_name)
-                        except Exception as e:
-                            print(f"Exception: {e}")
             else:
                 st.error("Invalid Credentials")
-
-
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
