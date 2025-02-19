@@ -151,11 +151,14 @@ with st.sidebar:
         file_name = st.text_input("File Name")
         st.caption("Enter a name for your transcription file. "
                    "Your transcribed text will be saved with this name as a .txt file.")
+        print(medical_assistant_id, file_name)
         if medical_assistant_id and file_name:
+            print("inside")
             new_data = db_fetch("medical_assistant", fetch_list_ids="*",
                                 where={"medical_assistant_id": medical_assistant_id},
                                 db=db_connect(),
                                 output_as_dict=True, close_conn=True)
+            print(new_data)
 
             if new_data:
                 uploaded_data = st.file_uploader(label="**Upload Conversation Text File**",
@@ -214,6 +217,11 @@ with st.sidebar:
                                                file_name=file_name)
                         except Exception as e:
                             print(f"Exception: {e}")
+            else:
+                st.error("Invalid Credentials")
+
+
+
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
