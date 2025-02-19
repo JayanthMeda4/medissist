@@ -159,7 +159,8 @@ with st.sidebar:
 
             if new_data:
                 uploaded_data = st.file_uploader(label="**Upload Conversation Text File**",
-                                                 type=[".mp4"], accept_multiple_files=False,
+                                                 type=["mp3", "wav", "aac", "flac", "m4a", "ogg"],
+                                                 accept_multiple_files=False,
                                                  help="Upload Only Text files")
 
                 if uploaded_data:
