@@ -234,49 +234,52 @@ with st.sidebar:
 
             else:
                 st.error("Invalid Credentials")
-
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-if st.session_state.user_verified and st.session_state.is_patient:
-    prompt = st.chat_input("Say Something", disabled=st.session_state.chat_input)
-    if prompt:
-        with st.chat_message("user"):
-            st.markdown(prompt)
+try:
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+    if st.session_state.user_verified and st.session_state.is_patient:
+        prompt = st.chat_input("Say Something", disabled=st.session_state.chat_input)
+        if prompt:
+            with st.chat_message("user"):
+                st.markdown(prompt)
+            with st.spinner("Generating Response"):
+                st.session_state.chat_engine = MedQueryRag.get_query_engine(pid=st.session_state.pid)
+                st.session_state.messages.append({"role": "user", "content": prompt})
+                response = st.session_state.chat_engine.query(prompt)
+            with st.chat_message("assistant"):
+                response_placeholder = st.empty()
+                full_response = ""
+            # Stream the response
+            for chunk in response.response_gen:
+                full_response += chunk
+                time.sleep(0.1)
+                response_placeholder.markdown(full_response + "▌")
+            response_placeholder.markdown(full_response)
+            st.session_state.messages.append({"role": "assistant", "content": full_response})
+    elif st.session_state.is_doctor and st.session_state.user_verified:
         with st.spinner("Generating Response"):
-            st.session_state.chat_engine = MedQueryRag.get_query_engine(pid=st.session_state.pid)
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            response = st.session_state.chat_engine.query(prompt)
+            st.session_state.soap_engine = MedQueryRag.create_soap_query_engine(
+                patient_dir=st.session_state.patient_directory
+            )
         with st.chat_message("assistant"):
             response_placeholder = st.empty()
             full_response = ""
-        # Stream the response
-        for chunk in response.response_gen:
-            full_response += chunk
-            time.sleep(0.1)
-            response_placeholder.markdown(full_response + "▌")
-        response_placeholder.markdown(full_response)
-        st.session_state.messages.append({"role": "assistant", "content": full_response})
-elif st.session_state.is_doctor and st.session_state.user_verified:
-    with st.spinner("Generating Response"):
-        st.session_state.soap_engine = MedQueryRag.create_soap_query_engine(
-            patient_dir=st.session_state.patient_directory
+        # Query the engine with streaming
+        streaming_response = st.session_state.soap_engine.query(
+            f"Generate SOAP notes for patient {Path(st.session_state.patient_directory).name} combining all visits"
         )
-    with st.chat_message("assistant"):
-        response_placeholder = st.empty()
-        full_response = ""
-    # Query the engine with streaming
-    streaming_response = st.session_state.soap_engine.query(
-        f"Generate SOAP notes for patient {Path(st.session_state.patient_directory).name} combining all visits"
-    )
-    # Stream the response chunk by chunk
-    for chunk in streaming_response.response_gen:
-        full_response += chunk
-        time.sleep(0.1)  # Simulate a slight delay for streaming effect
-        response_placeholder.markdown(full_response + "▌")  # Add a typing cursor effect
-    # Finalize the response (remove the cursor)
-    response_placeholder.markdown(full_response)
-    st.session_state.is_doctor = False
-else:
-    prompt = st.chat_input("Say Something", disabled=st.session_state.chat_input)
-    st.warning("Patient ID not verified, Please verify Patient ID")
+        # Stream the response chunk by chunk
+        for chunk in streaming_response.response_gen:
+            full_response += chunk
+            time.sleep(0.1)  # Simulate a slight delay for streaming effect
+            response_placeholder.markdown(full_response + "▌")  # Add a typing cursor effect
+        # Finalize the response (remove the cursor)
+        response_placeholder.markdown(full_response)
+        st.session_state.is_doctor = False
+    else:
+        prompt = st.chat_input("Say Something", disabled=st.session_state.chat_input)
+        st.warning("Patient ID not verified, Please verify Patient ID")
+except Exception as e:
+    print(e)
+    st.error("Something Went Wrong")
