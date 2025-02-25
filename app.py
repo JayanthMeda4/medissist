@@ -5,7 +5,7 @@ import os
 import re
 from pathlib import Path
 from lc_rag_llama import MedQueryRag
-
+import logging
 from deepgram import (
     DeepgramClient,
     PrerecordedOptions,
@@ -282,6 +282,7 @@ try:
         st.warning("Patient ID not verified, Please verify Patient ID")
 except Exception as e:
     print(e)
+    logging.error(e)
     st.error("Something Went Wrong")
 st.markdown("""
             <style>
