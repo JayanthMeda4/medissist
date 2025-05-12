@@ -58,7 +58,7 @@ class MedQueryRag:
 
     def return_vector_store(self):
         docs, text_splitter = self.return_documents()
-        qc = QdrantClient("http://13.201.251.190:6333/")
+        qc = QdrantClient("http://localhost:6333/")
         if not qc.collection_exists(self.pid):
             qc.create_collection(
                 collection_name=self.pid,
@@ -72,7 +72,7 @@ class MedQueryRag:
 
     @classmethod
     def get_existing_vector_store(cls, pid):
-        qc = QdrantClient("http://13.201.251.190:6333/")
+        qc = QdrantClient("http://localhost:6333/")
         if not qc.collection_exists(pid):
             raise ValueError(f"collection {pid} does not exist")
         qdrant_vector_store = QdrantVectorStore(client=qc, collection_name=pid)
